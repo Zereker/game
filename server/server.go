@@ -6,7 +6,6 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/Zereker/game/protocol"
 	"github.com/Zereker/socket"
@@ -92,7 +91,7 @@ func (s *Server) RemovePlayer(playerID string) {
 			room.RemovePlayer(playerID)
 
 			// 通知房间内其他玩家
-			leftMsg, _ := protocol.NewMessage(protocol.MsgPlayerLeft, protocol.PlayerLeftData{
+			leftMsg := protocol.MustNewMessage(protocol.MsgPlayerLeft, protocol.PlayerLeftData{
 				PlayerID: playerID,
 			})
 			room.BroadcastMessage(leftMsg)
@@ -145,18 +144,18 @@ func (s *Server) HandleConnection(conn *net.TCPConn) {
 			player.Conn = socketConn
 			s.AddPlayer(player)
 
-			// 发送登录成功消息
-			respMsg, _ := protocol.NewMessage(protocol.MsgLoginSuccess, protocol.LoginSuccessData{
+			// 发送登录成功消息 (使用同步发送确保消息立即发出)
+			respMsg := protocol.MustNewMessage(protocol.MsgLoginSuccess, protocol.LoginSuccessData{
 				PlayerID: player.ID,
 			})
 
-			return socketConn.Write(respMsg)
+			return socketConn.WriteDirect(respMsg)
 		}
 
 		// 处理其他消息
 		if tempPlayerID == "" {
-			errMsg, _ := protocol.NewErrorMessage("please login first")
-			socketConn.Write(errMsg)
+			errMsg := protocol.MustNewMessage(protocol.MsgError, protocol.ErrorData{Message: "please login first"})
+			socketConn.WriteDirect(errMsg)
 			return nil
 		}
 
@@ -167,15 +166,12 @@ func (s *Server) HandleConnection(conn *net.TCPConn) {
 				"type", msg.Type,
 				"error", err)
 
-			// 发送错误消息
-			errMsg, _ := protocol.NewErrorMessage(err.Error())
+			// 发送错误消息 (使用同步发送)
+			errMsg := protocol.MustNewMessage(protocol.MsgError, protocol.ErrorData{Message: err.Error()})
 			if player := s.GetPlayer(tempPlayerID); player != nil {
-				player.SendMessage(errMsg)
+				player.SendMessageDirect(errMsg)
 			}
 		}
-
-		// 给 writeLoop 一点时间发送响应消息
-		time.Sleep(500 * time.Millisecond)
 
 		return nil
 	})

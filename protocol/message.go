@@ -13,6 +13,9 @@ type Message struct {
 	Type      MessageType     `json:"type"`
 	Data      json.RawMessage `json:"data"`
 	Timestamp int64           `json:"timestamp"`
+
+	// 缓存序列化后的数据，避免重复序列化
+	cachedBody []byte
 }
 
 // NewMessage 创建新消息
@@ -29,6 +32,16 @@ func NewMessage(msgType MessageType, data interface{}) (*Message, error) {
 	}, nil
 }
 
+// MustNewMessage 创建新消息，在错误时 panic（用于已知不会失败的消息创建）
+// 注意：仅在确定数据结构可以被正确序列化时使用
+func MustNewMessage(msgType MessageType, data interface{}) *Message {
+	msg, err := NewMessage(msgType, data)
+	if err != nil {
+		panic("failed to create message: " + err.Error())
+	}
+	return msg
+}
+
 // UnmarshalData 解析消息数据
 func (m *Message) UnmarshalData(v interface{}) error {
 	if err := json.Unmarshal(m.Data, v); err != nil {
@@ -37,16 +50,23 @@ func (m *Message) UnmarshalData(v interface{}) error {
 	return nil
 }
 
+// ensureCached 确保消息已被序列化并缓存
+func (m *Message) ensureCached() {
+	if m.cachedBody == nil {
+		m.cachedBody, _ = json.Marshal(m)
+	}
+}
+
 // Length 实现 socket.Message 接口
 func (m *Message) Length() int {
-	data, _ := json.Marshal(m)
-	return len(data)
+	m.ensureCached()
+	return len(m.cachedBody)
 }
 
 // Body 实现 socket.Message 接口
 func (m *Message) Body() []byte {
-	data, _ := json.Marshal(m)
-	return data
+	m.ensureCached()
+	return m.cachedBody
 }
 
 // Codec 消息编解码器

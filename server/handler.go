@@ -59,11 +59,11 @@ func (h *MessageHandler) handleLogin(playerID string, msg *protocol.Message) err
 	player.Username = data.Username
 
 	// 发送登录成功消息
-	respMsg, _ := protocol.NewMessage(protocol.MsgLoginSuccess, protocol.LoginSuccessData{
+	respMsg := protocol.MustNewMessage(protocol.MsgLoginSuccess, protocol.LoginSuccessData{
 		PlayerID: playerID,
 	})
 
-	return player.SendMessage(respMsg)
+	return player.SendMessageDirect(respMsg)
 }
 
 // handleCreateRoom 处理创建房间
@@ -73,7 +73,19 @@ func (h *MessageHandler) handleCreateRoom(playerID string, msg *protocol.Message
 		return err
 	}
 
-	roomName := data["roomName"].(string)
+	// 安全类型断言
+	roomNameRaw, ok := data["roomName"]
+	if !ok {
+		return errors.New("missing roomName field")
+	}
+	roomName, ok := roomNameRaw.(string)
+	if !ok {
+		return errors.New("roomName must be a string")
+	}
+	// 输入验证
+	if len(roomName) == 0 || len(roomName) > 50 {
+		return errors.New("roomName must be 1-50 characters")
+	}
 
 	// 解析角色配置
 	var roles []werewolf.RoleType
@@ -105,7 +117,7 @@ func (h *MessageHandler) handleCreateRoom(playerID string, msg *protocol.Message
 	}
 
 	// 发送房间创建成功消息
-	respMsg, _ := protocol.NewMessage(protocol.MsgRoomCreated, protocol.RoomCreatedData{
+	respMsg := protocol.MustNewMessage(protocol.MsgRoomCreated, protocol.RoomCreatedData{
 		RoomID: room.ID,
 	})
 
@@ -117,7 +129,7 @@ func (h *MessageHandler) handleCreateRoom(playerID string, msg *protocol.Message
 	h.logger.Info("room created message sent")
 
 	// 发送房间加入成功消息
-	joinedMsg, _ := protocol.NewMessage(protocol.MsgRoomJoined, protocol.RoomJoinedData{
+	joinedMsg := protocol.MustNewMessage(protocol.MsgRoomJoined, protocol.RoomJoinedData{
 		RoomID:  room.ID,
 		Players: room.GetPlayerList(),
 	})
@@ -149,18 +161,18 @@ func (h *MessageHandler) handleJoinRoom(playerID string, msg *protocol.Message) 
 		return err
 	}
 
-	// 发送加入成功消息给该玩家
-	joinedMsg, _ := protocol.NewMessage(protocol.MsgRoomJoined, protocol.RoomJoinedData{
+	// 发送加入成功消息给该玩家 (使用同步发送)
+	joinedMsg := protocol.MustNewMessage(protocol.MsgRoomJoined, protocol.RoomJoinedData{
 		RoomID:  room.ID,
 		Players: room.GetPlayerList(),
 	})
 
-	if err := player.SendMessage(joinedMsg); err != nil {
+	if err := player.SendMessageDirect(joinedMsg); err != nil {
 		return err
 	}
 
-	// 通知房间内其他玩家
-	playerJoinedMsg, _ := protocol.NewMessage(protocol.MsgPlayerJoined, protocol.PlayerJoinedData{
+	// 通知房间内其他玩家 (使用同步发送)
+	playerJoinedMsg := protocol.MustNewMessage(protocol.MsgPlayerJoined, protocol.PlayerJoinedData{
 		Player: protocol.PlayerInfo{
 			ID:       player.ID,
 			Username: player.Username,
@@ -171,7 +183,7 @@ func (h *MessageHandler) handleJoinRoom(playerID string, msg *protocol.Message) 
 
 	for _, p := range room.Players {
 		if p.ID != playerID {
-			p.SendMessage(playerJoinedMsg)
+			p.SendMessageDirect(playerJoinedMsg)
 		}
 	}
 
@@ -201,7 +213,7 @@ func (h *MessageHandler) handleReady(playerID string, msg *protocol.Message) err
 	}
 
 	// 通知房间内所有玩家
-	readyMsg, _ := protocol.NewMessage(protocol.MsgPlayerReady, protocol.PlayerReadyData{
+	readyMsg := protocol.MustNewMessage(protocol.MsgPlayerReady, protocol.PlayerReadyData{
 		PlayerID: playerID,
 		IsReady:  newReadyState,
 	})
@@ -244,8 +256,15 @@ func (h *MessageHandler) handlePerformAction(playerID string, msg *protocol.Mess
 		return errors.New("game not started")
 	}
 
-	// 解析动作类型
-	actionTypeStr := data["actionType"].(string)
+	// 安全类型断言 - 解析动作类型
+	actionTypeRaw, ok := data["actionType"]
+	if !ok {
+		return errors.New("missing actionType field")
+	}
+	actionTypeStr, ok := actionTypeRaw.(string)
+	if !ok {
+		return errors.New("actionType must be a string")
+	}
 	actionType := werewolf.ActionType(actionTypeStr)
 
 	targetID := ""
@@ -261,22 +280,22 @@ func (h *MessageHandler) handlePerformAction(playerID string, msg *protocol.Mess
 	// 执行动作
 	err := room.Engine.PerformAction(playerID, actionType, targetID, actionData)
 
-	// 发送动作结果
+	// 发送动作结果 (使用同步发送)
 	var resultMsg *protocol.Message
 	if err != nil {
-		resultMsg, _ = protocol.NewMessage(protocol.MsgActionResult, protocol.ActionResultData{
+		resultMsg = protocol.MustNewMessage(protocol.MsgActionResult, protocol.ActionResultData{
 			Success: false,
 			Message: err.Error(),
 		})
 	} else {
-		resultMsg, _ = protocol.NewMessage(protocol.MsgActionResult, protocol.ActionResultData{
+		resultMsg = protocol.MustNewMessage(protocol.MsgActionResult, protocol.ActionResultData{
 			Success: true,
 			Message: "动作执行成功",
 			Data:    actionData,
 		})
 	}
 
-	player.SendMessage(resultMsg)
+	player.SendMessageDirect(resultMsg)
 
 	// 更新游戏状态
 	room.SendGameState()

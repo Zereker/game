@@ -369,9 +369,16 @@ func (c *Client) handleError(msg *protocol.Message) error {
 	return nil
 }
 
+// maxEvents 事件日志最大条数，防止内存无限增长
+const maxEvents = 100
+
 // addEvent 添加事件到日志
 func (c *Client) addEvent(event string) {
 	c.state.Events = append(c.state.Events, event)
+	// 如果事件数超过限制，移除最早的事件
+	if len(c.state.Events) > maxEvents {
+		c.state.Events = c.state.Events[len(c.state.Events)-maxEvents:]
+	}
 }
 
 // Render 渲染UI

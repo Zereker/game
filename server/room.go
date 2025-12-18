@@ -190,7 +190,7 @@ func (r *Room) handlePhaseStarted(e werewolf.Event) {
 	state := r.Engine.GetState()
 
 	// 广播阶段变化
-	msg, _ := protocol.NewMessage(protocol.MsgPhaseChanged, protocol.PhaseChangedData{
+	msg := protocol.MustNewMessage(protocol.MsgPhaseChanged, protocol.PhaseChangedData{
 		Phase: phase,
 		Round: state.Round,
 	})
@@ -207,7 +207,7 @@ func (r *Room) handlePlayerDied(e werewolf.Event) {
 	playerID := data["playerID"].(string)
 	reason := data["reason"].(string)
 
-	msg, _ := protocol.NewMessage(protocol.MsgGameEvent, protocol.GameEventData{
+	msg := protocol.MustNewMessage(protocol.MsgGameEvent, protocol.GameEventData{
 		EventType: werewolf.EventPlayerDied,
 		Message:   fmt.Sprintf("玩家 %s 死亡: %s", playerID, reason),
 		Data:      data,
@@ -228,7 +228,7 @@ func (r *Room) handleGameEnded(e werewolf.Event) {
 	state := r.Engine.GetState()
 	players := r.convertPlayersInfo(state.Players, true)
 
-	msg, _ := protocol.NewMessage(protocol.MsgGameEnded, protocol.GameEndedData{
+	msg := protocol.MustNewMessage(protocol.MsgGameEnded, protocol.GameEndedData{
 		Winner:  winner,
 		Players: players,
 	})
@@ -266,7 +266,7 @@ func (r *Room) notifyGameStarted() {
 
 		// 发送游戏开始消息（包含该玩家的角色信息）
 		players := r.convertPlayersInfo(state.Players, false)
-		msg, _ := protocol.NewMessage(protocol.MsgGameStarted, protocol.GameStartedData{
+		msg := protocol.MustNewMessage(protocol.MsgGameStarted, protocol.GameStartedData{
 			RoleType: roleType,
 			Camp:     camp,
 			Players:  players,
@@ -281,7 +281,7 @@ func (r *Room) SendGameState() {
 	state := r.Engine.GetState()
 	players := r.convertPlayersInfo(state.Players, false)
 
-	msg, _ := protocol.NewMessage(protocol.MsgGameState, protocol.GameStateData{
+	msg := protocol.MustNewMessage(protocol.MsgGameState, protocol.GameStateData{
 		Phase:        state.Phase,
 		Round:        state.Round,
 		Players:      players,
