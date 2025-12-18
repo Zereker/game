@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Zereker/game/protocol"
 	"github.com/Zereker/socket"
@@ -114,6 +115,7 @@ func (s *Server) HandleConnection(conn *net.TCPConn) {
 
 	// 创建临时玩家（等待登录）
 	tempPlayerID := ""
+	var socketConn *socket.Conn
 
 	// 配置连接选项
 	codecOption := socket.CustomCodecOption(protocol.NewCodec())
@@ -135,9 +137,12 @@ func (s *Server) HandleConnection(conn *net.TCPConn) {
 				return err
 			}
 
-			// 创建玩家
-			player := NewPlayer(loginData.Username, socketConn)
+			// 创建玩家（先不设置Conn，因为socketConn还未初始化）
+			player := NewPlayer(loginData.Username, nil)
 			tempPlayerID = player.ID
+
+			// 在添加到服务器后，立即更新Conn（此时socketConn已经有值了）
+			player.Conn = socketConn
 			s.AddPlayer(player)
 
 			// 发送登录成功消息
@@ -145,7 +150,7 @@ func (s *Server) HandleConnection(conn *net.TCPConn) {
 				PlayerID: player.ID,
 			})
 
-			return player.SendMessage(respMsg)
+			return socketConn.Write(respMsg)
 		}
 
 		// 处理其他消息
@@ -169,11 +174,15 @@ func (s *Server) HandleConnection(conn *net.TCPConn) {
 			}
 		}
 
+		// 给 writeLoop 一点时间发送响应消息
+		time.Sleep(500 * time.Millisecond)
+
 		return nil
 	})
 
 	// 创建连接
-	socketConn, err := socket.NewConn(conn, codecOption, onErrorOption, onMessageOption)
+	var err error
+	socketConn, err = socket.NewConn(conn, codecOption, onErrorOption, onMessageOption)
 	if err != nil {
 		s.logger.Error("create connection error", "error", err)
 		conn.Close()

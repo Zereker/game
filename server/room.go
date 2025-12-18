@@ -137,12 +137,7 @@ func (r *Room) Start() error {
 		EnableLastWords: false,
 	}
 
-	engine, err := werewolf.NewEngine(config, werewolf.WithLogger(r.logger))
-	if err != nil {
-		return errors.Wrap(err, "create engine")
-	}
-
-	r.Engine = engine
+	r.Engine = werewolf.NewEngine(config)
 
 	// 添加玩家到引擎
 	for playerID := range r.Players {
@@ -255,9 +250,15 @@ func (r *Room) notifyGameStarted() {
 		for _, ps := range state.Players {
 			if ps.ID == playerID {
 				roleType = ps.Role
-				role := r.Engine.GetPlayerRole(playerID)
-				if role != nil {
-					camp = role.GetCamp()
+				// 根据角色类型判断阵营
+				switch roleType {
+				case werewolf.RoleTypeWerewolf:
+					camp = werewolf.CampEvil
+				case werewolf.RoleTypeSeer, werewolf.RoleTypeWitch, werewolf.RoleTypeGuard,
+					werewolf.RoleTypeHunter, werewolf.RoleTypeVillager:
+					camp = werewolf.CampGood
+				default:
+					camp = werewolf.CampNone
 				}
 				break
 			}
@@ -271,7 +272,7 @@ func (r *Room) notifyGameStarted() {
 			Players:  players,
 		})
 
-		player.SendMessage(msg)
+		player.SendMessageDirect(msg)
 	}
 }
 
@@ -297,7 +298,7 @@ func (r *Room) BroadcastMessage(msg *protocol.Message) {
 	defer r.mu.RUnlock()
 
 	for _, player := range r.Players {
-		player.SendMessage(msg)
+		player.SendMessageDirect(msg)
 	}
 }
 

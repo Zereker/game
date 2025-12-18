@@ -109,9 +109,12 @@ func (h *MessageHandler) handleCreateRoom(playerID string, msg *protocol.Message
 		RoomID: room.ID,
 	})
 
-	if err := player.SendMessage(respMsg); err != nil {
+	h.logger.Info("sending room created message", "roomID", room.ID)
+	if err := player.SendMessageDirect(respMsg); err != nil {
+		h.logger.Error("failed to send room created message", "error", err)
 		return err
 	}
+	h.logger.Info("room created message sent")
 
 	// 发送房间加入成功消息
 	joinedMsg, _ := protocol.NewMessage(protocol.MsgRoomJoined, protocol.RoomJoinedData{
@@ -119,7 +122,14 @@ func (h *MessageHandler) handleCreateRoom(playerID string, msg *protocol.Message
 		Players: room.GetPlayerList(),
 	})
 
-	return player.SendMessage(joinedMsg)
+	h.logger.Info("sending room joined message", "roomID", room.ID)
+	err = player.SendMessageDirect(joinedMsg)
+	if err != nil {
+		h.logger.Error("failed to send room joined message", "error", err)
+	} else {
+		h.logger.Info("room joined message sent")
+	}
+	return err
 }
 
 // handleJoinRoom 处理加入房间
@@ -198,11 +208,15 @@ func (h *MessageHandler) handleReady(playerID string, msg *protocol.Message) err
 
 	room.BroadcastMessage(readyMsg)
 
-	// 如果所有人都准备好了，开始游戏
+	// 如果所有人都准备好了，尝试开始游戏
+	// 由于可能有多个goroutine同时到达这里，Start()内部会检查状态
 	if room.CanStart() {
 		if err := room.Start(); err != nil {
-			h.logger.Error("failed to start game", "error", err)
-			return err
+			// 忽略 "room is not in waiting state" 错误，这表示游戏已经被其他goroutine启动了
+			if err.Error() != "room is not in waiting state" {
+				h.logger.Error("failed to start game", "error", err)
+				return err
+			}
 		}
 	}
 

@@ -24,10 +24,18 @@ func NewPlayer(username string, conn *socket.Conn) *Player {
 	}
 }
 
-// SendMessage 发送消息给玩家
+// SendMessage 发送消息给玩家 (通过channel异步发送)
 func (p *Player) SendMessage(msg socket.Message) error {
 	if p.Conn == nil {
 		return nil
 	}
 	return p.Conn.Write(msg)
+}
+
+// SendMessageDirect 直接同步发送消息 (绕过channel)
+func (p *Player) SendMessageDirect(msg socket.Message) error {
+	if p.Conn == nil {
+		return nil
+	}
+	return p.Conn.WriteDirect(msg)
 }
