@@ -5,6 +5,9 @@ bin/
 *.dll
 *.so
 *.dylib
+server_bin
+test_full_game
+test_6players
 
 # Test binary
 *.test
