@@ -17,9 +17,9 @@ func main() {
 	received := make(chan *protocol.Message, 10)
 
 	codecOpt := socket.CustomCodecOption(protocol.NewCodec())
-	errorOpt := socket.OnErrorOption(func(err error) bool {
+	errorOpt := socket.OnErrorOption(func(err error) socket.ErrorAction {
 		fmt.Printf("ERROR: %v\n", err)
-		return true
+		return socket.Disconnect
 	})
 	msgOpt := socket.OnMessageOption(func(m socket.Message) error {
 		msg := m.(*protocol.Message)

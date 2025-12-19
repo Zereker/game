@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"log/slog"
@@ -39,7 +40,7 @@ func main() {
 	logger.Info("waiting for players to connect...")
 
 	// 启动服务器（阻塞）
-	tcpServer.Serve(server)
+	tcpServer.Serve(context.Background(), server)
 }
 
 // Handle 实现 socket.Handler 接口

@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Zereker/game/protocol"
 	"github.com/Zereker/socket"
@@ -119,11 +120,11 @@ func (s *Server) HandleConnection(conn *net.TCPConn) {
 	// 配置连接选项
 	codecOption := socket.CustomCodecOption(protocol.NewCodec())
 
-	onErrorOption := socket.OnErrorOption(func(err error) bool {
+	onErrorOption := socket.OnErrorOption(func(err error) socket.ErrorAction {
 		s.logger.Error("connection error",
 			"connID", connID,
 			"error", err)
-		return true // 断开连接
+		return socket.Disconnect // 断开连接
 	})
 
 	onMessageOption := socket.OnMessageOption(func(m socket.Message) error {
@@ -149,13 +150,17 @@ func (s *Server) HandleConnection(conn *net.TCPConn) {
 				PlayerID: player.ID,
 			})
 
-			return socketConn.WriteDirect(respMsg)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			return socketConn.WriteBlocking(ctx, respMsg)
 		}
 
 		// 处理其他消息
 		if tempPlayerID == "" {
 			errMsg := protocol.MustNewMessage(protocol.MsgError, protocol.ErrorData{Message: "please login first"})
-			socketConn.WriteDirect(errMsg)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			socketConn.WriteBlocking(ctx, errMsg)
 			return nil
 		}
 

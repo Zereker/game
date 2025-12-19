@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"time"
+
 	"github.com/Zereker/socket"
 	"github.com/google/uuid"
 )
@@ -32,10 +35,12 @@ func (p *Player) SendMessage(msg socket.Message) error {
 	return p.Conn.Write(msg)
 }
 
-// SendMessageDirect 直接同步发送消息 (绕过channel)
+// SendMessageDirect 直接同步发送消息 (阻塞直到发送完成)
 func (p *Player) SendMessageDirect(msg socket.Message) error {
 	if p.Conn == nil {
 		return nil
 	}
-	return p.Conn.WriteDirect(msg)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return p.Conn.WriteBlocking(ctx, msg)
 }

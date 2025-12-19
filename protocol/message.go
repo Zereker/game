@@ -1,7 +1,9 @@
 package protocol
 
 import (
+	"encoding/binary"
 	"encoding/json"
+	"io"
 	"time"
 
 	"github.com/Zereker/socket"
@@ -70,6 +72,7 @@ func (m *Message) Body() []byte {
 }
 
 // Codec 消息编解码器
+// 消息格式: [4字节长度][JSON数据]
 type Codec struct{}
 
 // NewCodec 创建新的编解码器
@@ -77,8 +80,25 @@ func NewCodec() *Codec {
 	return &Codec{}
 }
 
-// Decode 实现 socket.Codec 接口
-func (c *Codec) Decode(data []byte) (socket.Message, error) {
+// Decode 实现 socket.Codec 接口 - 从 io.Reader 读取消息
+func (c *Codec) Decode(r io.Reader) (socket.Message, error) {
+	// 读取4字节消息长度
+	var length uint32
+	if err := binary.Read(r, binary.BigEndian, &length); err != nil {
+		return nil, errors.Wrap(err, "read message length")
+	}
+
+	// 限制消息大小防止内存攻击
+	if length > 1024*1024 { // 1MB
+		return nil, errors.New("message too large")
+	}
+
+	// 读取消息内容
+	data := make([]byte, length)
+	if _, err := io.ReadFull(r, data); err != nil {
+		return nil, errors.Wrap(err, "read message body")
+	}
+
 	var msg Message
 	if err := json.Unmarshal(data, &msg); err != nil {
 		return nil, errors.Wrap(err, "decode message")
@@ -86,9 +106,17 @@ func (c *Codec) Decode(data []byte) (socket.Message, error) {
 	return &msg, nil
 }
 
-// Encode 实现 socket.Codec 接口
+// Encode 实现 socket.Codec 接口 - 编码消息为带长度前缀的字节
 func (c *Codec) Encode(message socket.Message) ([]byte, error) {
-	return message.Body(), nil
+	body := message.Body()
+	length := uint32(len(body))
+
+	// 创建带长度前缀的数据
+	result := make([]byte, 4+len(body))
+	binary.BigEndian.PutUint32(result[:4], length)
+	copy(result[4:], body)
+
+	return result, nil
 }
 
 // 辅助函数：创建各种类型的消息

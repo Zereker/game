@@ -40,9 +40,9 @@ func (c *TestClient) Connect() error {
 	}
 
 	codecOpt := socket.CustomCodecOption(protocol.NewCodec())
-	errorOpt := socket.OnErrorOption(func(err error) bool {
+	errorOpt := socket.OnErrorOption(func(err error) socket.ErrorAction {
 		fmt.Printf("[%s] ERROR: %v\n", c.Name, err)
-		return true
+		return socket.Disconnect
 	})
 	msgOpt := socket.OnMessageOption(func(m socket.Message) error {
 		msg := m.(*protocol.Message)
