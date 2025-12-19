@@ -12,6 +12,7 @@ const (
 	MsgJoinRoom      MessageType = "JOIN_ROOM"
 	MsgReady         MessageType = "READY"
 	MsgPerformAction MessageType = "PERFORM_ACTION"
+	MsgAdvancePhase  MessageType = "ADVANCE_PHASE" // 推进游戏阶段
 
 	// 服务器 -> 客户端
 	MsgLoginSuccess  MessageType = "LOGIN_SUCCESS"
@@ -50,6 +51,11 @@ type PerformActionData struct {
 	ActionType werewolf.ActionType `json:"actionType"`
 	TargetID   string              `json:"targetID,omitempty"`
 	Data       map[string]interface{} `json:"data,omitempty"`
+}
+
+// AdvancePhaseData 推进阶段消息数据
+type AdvancePhaseData struct {
+	Phase werewolf.PhaseType `json:"phase"`
 }
 
 // LoginSuccessData 登录成功消息数据

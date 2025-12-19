@@ -158,3 +158,10 @@ func NewPerformActionMessage(actionType, targetID string, data map[string]interf
 func NewErrorMessage(message string) (*Message, error) {
 	return NewMessage(MsgError, ErrorData{Message: message})
 }
+
+// NewAdvancePhaseMessage 创建阶段推进消息
+func NewAdvancePhaseMessage(phase string) (*Message, error) {
+	return NewMessage(MsgAdvancePhase, map[string]interface{}{
+		"phase": phase,
+	})
+}

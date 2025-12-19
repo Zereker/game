@@ -39,6 +39,8 @@ func (h *MessageHandler) HandleMessage(playerID string, msg *protocol.Message) e
 		return h.handleReady(playerID, msg)
 	case protocol.MsgPerformAction:
 		return h.handlePerformAction(playerID, msg)
+	case protocol.MsgAdvancePhase:
+		return h.handleAdvancePhase(playerID, msg)
 	default:
 		return errors.Errorf("unknown message type: %s", msg.Type)
 	}
@@ -278,11 +280,20 @@ func (h *MessageHandler) handlePerformAction(playerID string, msg *protocol.Mess
 	}
 
 	// 执行动作
+	h.logger.Info("performing action",
+		"playerID", playerID,
+		"action", actionType,
+		"targetID", targetID)
+
 	err := room.Engine.PerformAction(playerID, actionType, targetID, actionData)
 
 	// 发送动作结果 (使用同步发送)
 	var resultMsg *protocol.Message
 	if err != nil {
+		h.logger.Error("action failed",
+			"playerID", playerID,
+			"action", actionType,
+			"error", err)
 		resultMsg = protocol.MustNewMessage(protocol.MsgActionResult, protocol.ActionResultData{
 			Success: false,
 			Message: err.Error(),
@@ -301,4 +312,42 @@ func (h *MessageHandler) handlePerformAction(playerID string, msg *protocol.Mess
 	room.SendGameState()
 
 	return err
+}
+
+// handleAdvancePhase 处理阶段推进
+func (h *MessageHandler) handleAdvancePhase(playerID string, msg *protocol.Message) error {
+	var data protocol.AdvancePhaseData
+	if err := msg.UnmarshalData(&data); err != nil {
+		return err
+	}
+
+	player := h.server.GetPlayer(playerID)
+	if player == nil {
+		return errors.New("player not found")
+	}
+
+	room := h.server.GetRoom(player.RoomID)
+	if room == nil {
+		return errors.New("room not found")
+	}
+
+	if room.Engine == nil {
+		return errors.New("game not started")
+	}
+
+	// 推进到指定阶段
+	if err := room.Engine.AdvancePhase(data.Phase); err != nil {
+		return errors.Wrap(err, "advance phase")
+	}
+
+	// 检查胜利条件
+	winner := room.Engine.CheckWinCondition()
+	if winner != werewolf.CampNone {
+		room.Engine.EndGame(winner)
+	}
+
+	// 广播阶段变化和游戏状态
+	room.SendGameState()
+
+	return nil
 }
