@@ -1,6 +1,6 @@
 package protocol
 
-import "github.com/Zereker/werewolf"
+import pb "github.com/Zereker/werewolf/proto"
 
 // MessageType 定义所有消息类型
 type MessageType string
@@ -12,7 +12,7 @@ const (
 	MsgJoinRoom      MessageType = "JOIN_ROOM"
 	MsgReady         MessageType = "READY"
 	MsgPerformAction MessageType = "PERFORM_ACTION"
-	MsgAdvancePhase  MessageType = "ADVANCE_PHASE" // 推进游戏阶段
+	MsgEndPhase      MessageType = "END_PHASE" // 结束当前阶段
 
 	// 服务器 -> 客户端
 	MsgLoginSuccess  MessageType = "LOGIN_SUCCESS"
@@ -37,8 +37,8 @@ type LoginData struct {
 
 // CreateRoomData 创建房间消息数据
 type CreateRoomData struct {
-	RoomName string           `json:"roomName"`
-	Roles    []werewolf.RoleType `json:"roles"`
+	RoomName string        `json:"roomName"`
+	Roles    []pb.RoleType `json:"roles"`
 }
 
 // JoinRoomData 加入房间消息数据
@@ -48,15 +48,12 @@ type JoinRoomData struct {
 
 // PerformActionData 执行动作消息数据
 type PerformActionData struct {
-	ActionType werewolf.ActionType `json:"actionType"`
-	TargetID   string              `json:"targetID,omitempty"`
-	Data       map[string]interface{} `json:"data,omitempty"`
+	SkillType pb.SkillType `json:"skillType"`
+	TargetID  string       `json:"targetID,omitempty"`
 }
 
-// AdvancePhaseData 推进阶段消息数据
-type AdvancePhaseData struct {
-	Phase werewolf.PhaseType `json:"phase"`
-}
+// EndPhaseData 结束阶段消息数据
+type EndPhaseData struct{}
 
 // LoginSuccessData 登录成功消息数据
 type LoginSuccessData struct {
@@ -92,30 +89,30 @@ type PlayerReadyData struct {
 
 // GameStartedData 游戏开始消息数据
 type GameStartedData struct {
-	RoleType werewolf.RoleType `json:"roleType"`
-	Camp     werewolf.Camp     `json:"camp"`
-	Players  []PlayerInfo      `json:"players"`
+	RoleType pb.RoleType  `json:"roleType"`
+	Camp     pb.Camp      `json:"camp"`
+	Players  []PlayerInfo `json:"players"`
 }
 
 // PhaseChangedData 阶段变化消息数据
 type PhaseChangedData struct {
-	Phase werewolf.PhaseType `json:"phase"`
-	Round int                `json:"round"`
+	Phase pb.PhaseType `json:"phase"`
+	Round int          `json:"round"`
 }
 
 // GameStateData 游戏状态消息数据
 type GameStateData struct {
-	Phase        werewolf.PhaseType `json:"phase"`
-	Round        int                `json:"round"`
-	Players      []PlayerInfo       `json:"players"`
-	AlivePlayers []string           `json:"alivePlayers"`
-	IsEnded      bool               `json:"isEnded"`
+	Phase        pb.PhaseType `json:"phase"`
+	Round        int          `json:"round"`
+	Players      []PlayerInfo `json:"players"`
+	AlivePlayers []string     `json:"alivePlayers"`
+	IsEnded      bool         `json:"isEnded"`
 }
 
 // GameEventData 游戏事件消息数据
 type GameEventData struct {
-	EventType werewolf.EventType `json:"eventType"`
-	Message   string             `json:"message"`
+	EventType pb.EventType           `json:"eventType"`
+	Message   string                 `json:"message"`
 	Data      map[string]interface{} `json:"data,omitempty"`
 }
 
@@ -128,8 +125,8 @@ type ActionResultData struct {
 
 // GameEndedData 游戏结束消息数据
 type GameEndedData struct {
-	Winner  werewolf.Camp `json:"winner"`
-	Players []PlayerInfo  `json:"players"`
+	Winner  pb.Camp      `json:"winner"`
+	Players []PlayerInfo `json:"players"`
 }
 
 // ErrorData 错误消息数据
@@ -139,9 +136,9 @@ type ErrorData struct {
 
 // PlayerInfo 玩家信息
 type PlayerInfo struct {
-	ID       string            `json:"id"`
-	Username string            `json:"username"`
-	IsAlive  bool              `json:"isAlive"`
-	IsReady  bool              `json:"isReady"`
-	RoleType werewolf.RoleType `json:"roleType,omitempty"` // 只在特定情况下发送
+	ID       string      `json:"id"`
+	Username string      `json:"username"`
+	IsAlive  bool        `json:"isAlive"`
+	IsReady  bool        `json:"isReady"`
+	RoleType pb.RoleType `json:"roleType,omitempty"` // 只在特定情况下发送
 }

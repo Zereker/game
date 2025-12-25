@@ -5,6 +5,7 @@ import (
 
 	"github.com/Zereker/game/protocol"
 	"github.com/Zereker/werewolf"
+	pb "github.com/Zereker/werewolf/proto"
 	"github.com/pkg/errors"
 )
 
@@ -39,8 +40,8 @@ func (h *MessageHandler) HandleMessage(playerID string, msg *protocol.Message) e
 		return h.handleReady(playerID, msg)
 	case protocol.MsgPerformAction:
 		return h.handlePerformAction(playerID, msg)
-	case protocol.MsgAdvancePhase:
-		return h.handleAdvancePhase(playerID, msg)
+	case protocol.MsgEndPhase:
+		return h.handleEndPhase(playerID, msg)
 	default:
 		return errors.Errorf("unknown message type: %s", msg.Type)
 	}
@@ -68,6 +69,26 @@ func (h *MessageHandler) handleLogin(playerID string, msg *protocol.Message) err
 	return player.SendMessageDirect(respMsg)
 }
 
+// parseRoleType 解析角色类型
+func parseRoleType(s string) pb.RoleType {
+	switch s {
+	case "werewolf":
+		return pb.RoleType_ROLE_TYPE_WEREWOLF
+	case "seer":
+		return pb.RoleType_ROLE_TYPE_SEER
+	case "witch":
+		return pb.RoleType_ROLE_TYPE_WITCH
+	case "hunter":
+		return pb.RoleType_ROLE_TYPE_HUNTER
+	case "guard":
+		return pb.RoleType_ROLE_TYPE_GUARD
+	case "villager":
+		return pb.RoleType_ROLE_TYPE_VILLAGER
+	default:
+		return pb.RoleType_ROLE_TYPE_VILLAGER
+	}
+}
+
 // handleCreateRoom 处理创建房间
 func (h *MessageHandler) handleCreateRoom(playerID string, msg *protocol.Message) error {
 	var data map[string]interface{}
@@ -90,20 +111,22 @@ func (h *MessageHandler) handleCreateRoom(playerID string, msg *protocol.Message
 	}
 
 	// 解析角色配置
-	var roles []werewolf.RoleType
+	var roles []pb.RoleType
 	if rolesData, ok := data["roles"].([]interface{}); ok && len(rolesData) > 0 {
 		for _, r := range rolesData {
-			roles = append(roles, werewolf.RoleType(r.(string)))
+			if roleStr, ok := r.(string); ok {
+				roles = append(roles, parseRoleType(roleStr))
+			}
 		}
 	} else {
 		// 默认6人局配置
-		roles = []werewolf.RoleType{
-			werewolf.RoleTypeWerewolf,
-			werewolf.RoleTypeWerewolf,
-			werewolf.RoleTypeVillager,
-			werewolf.RoleTypeVillager,
-			werewolf.RoleTypeSeer,
-			werewolf.RoleTypeWitch,
+		roles = []pb.RoleType{
+			pb.RoleType_ROLE_TYPE_WEREWOLF,
+			pb.RoleType_ROLE_TYPE_WEREWOLF,
+			pb.RoleType_ROLE_TYPE_VILLAGER,
+			pb.RoleType_ROLE_TYPE_VILLAGER,
+			pb.RoleType_ROLE_TYPE_SEER,
+			pb.RoleType_ROLE_TYPE_WITCH,
 		}
 	}
 
@@ -258,41 +281,47 @@ func (h *MessageHandler) handlePerformAction(playerID string, msg *protocol.Mess
 		return errors.New("game not started")
 	}
 
-	// 安全类型断言 - 解析动作类型
-	actionTypeRaw, ok := data["actionType"]
+	// 解析技能类型
+	skillTypeRaw, ok := data["skillType"]
 	if !ok {
-		return errors.New("missing actionType field")
+		return errors.New("missing skillType field")
 	}
-	actionTypeStr, ok := actionTypeRaw.(string)
-	if !ok {
-		return errors.New("actionType must be a string")
+	var skillType pb.SkillType
+	switch v := skillTypeRaw.(type) {
+	case float64:
+		skillType = pb.SkillType(int32(v))
+	case int:
+		skillType = pb.SkillType(v)
+	default:
+		return errors.New("skillType must be a number")
 	}
-	actionType := werewolf.ActionType(actionTypeStr)
 
 	targetID := ""
 	if tid, ok := data["targetID"].(string); ok {
 		targetID = tid
 	}
 
-	actionData := make(map[string]interface{})
-	if ad, ok := data["data"].(map[string]interface{}); ok {
-		actionData = ad
+	// 创建技能使用
+	skillUse := &werewolf.SkillUse{
+		PlayerID: playerID,
+		Skill:    skillType,
+		TargetID: targetID,
 	}
 
-	// 执行动作
-	h.logger.Info("performing action",
+	h.logger.Info("submitting skill use",
 		"playerID", playerID,
-		"action", actionType,
+		"skillType", skillType,
 		"targetID", targetID)
 
-	err := room.Engine.PerformAction(playerID, actionType, targetID, actionData)
+	// 提交技能使用
+	err := room.Engine.SubmitSkillUse(skillUse)
 
-	// 发送动作结果 (使用同步发送)
+	// 发送动作结果
 	var resultMsg *protocol.Message
 	if err != nil {
-		h.logger.Error("action failed",
+		h.logger.Error("skill use failed",
 			"playerID", playerID,
-			"action", actionType,
+			"skillType", skillType,
 			"error", err)
 		resultMsg = protocol.MustNewMessage(protocol.MsgActionResult, protocol.ActionResultData{
 			Success: false,
@@ -301,8 +330,7 @@ func (h *MessageHandler) handlePerformAction(playerID string, msg *protocol.Mess
 	} else {
 		resultMsg = protocol.MustNewMessage(protocol.MsgActionResult, protocol.ActionResultData{
 			Success: true,
-			Message: "动作执行成功",
-			Data:    actionData,
+			Message: "技能提交成功",
 		})
 	}
 
@@ -314,13 +342,8 @@ func (h *MessageHandler) handlePerformAction(playerID string, msg *protocol.Mess
 	return err
 }
 
-// handleAdvancePhase 处理阶段推进
-func (h *MessageHandler) handleAdvancePhase(playerID string, msg *protocol.Message) error {
-	var data protocol.AdvancePhaseData
-	if err := msg.UnmarshalData(&data); err != nil {
-		return err
-	}
-
+// handleEndPhase 处理结束阶段
+func (h *MessageHandler) handleEndPhase(playerID string, msg *protocol.Message) error {
 	player := h.server.GetPlayer(playerID)
 	if player == nil {
 		return errors.New("player not found")
@@ -335,18 +358,24 @@ func (h *MessageHandler) handleAdvancePhase(playerID string, msg *protocol.Messa
 		return errors.New("game not started")
 	}
 
-	// 推进到指定阶段
-	if err := room.Engine.AdvancePhase(data.Phase); err != nil {
-		return errors.Wrap(err, "advance phase")
+	// 结束当前阶段，解析技能并流转到下一阶段
+	effects, err := room.Engine.EndPhase()
+	if err != nil {
+		return errors.Wrap(err, "end phase")
 	}
 
-	// 检查胜利条件
-	winner := room.Engine.CheckWinCondition()
-	if winner != werewolf.CampNone {
-		room.Engine.EndGame(winner)
-	}
+	h.logger.Info("phase ended",
+		"effects", len(effects),
+		"newPhase", room.Engine.GetCurrentPhase())
 
-	// 广播阶段变化和游戏状态
+	// 广播阶段变化
+	phaseMsg := protocol.MustNewMessage(protocol.MsgPhaseChanged, protocol.PhaseChangedData{
+		Phase: room.Engine.GetCurrentPhase(),
+		Round: room.Engine.GetCurrentRound(),
+	})
+	room.BroadcastMessage(phaseMsg)
+
+	// 广播游戏状态
 	room.SendGameState()
 
 	return nil

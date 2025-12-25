@@ -8,7 +8,7 @@ import (
 
 	"github.com/Zereker/game/protocol"
 	"github.com/Zereker/socket"
-	"github.com/Zereker/werewolf"
+	pb "github.com/Zereker/werewolf/proto"
 	"github.com/pkg/errors"
 )
 
@@ -17,9 +17,9 @@ type ClientState struct {
 	PlayerID     string
 	Username     string
 	RoomID       string
-	MyRole       werewolf.RoleType
-	MyCamp       werewolf.Camp
-	GamePhase    werewolf.PhaseType
+	MyRole       pb.RoleType
+	MyCamp       pb.Camp
+	GamePhase    pb.PhaseType
 	Round        int
 	Players      []protocol.PlayerInfo
 	AlivePlayers []string
@@ -73,9 +73,9 @@ func (c *Client) Connect(addr string) error {
 	// 配置连接选项
 	codecOption := socket.CustomCodecOption(protocol.NewCodec())
 
-	onErrorOption := socket.OnErrorOption(func(err error) bool {
+	onErrorOption := socket.OnErrorOption(func(err error) socket.ErrorAction {
 		c.logger.Error("connection error", "error", err)
-		return true // 断开连接
+		return socket.Disconnect
 	})
 
 	onMessageOption := socket.OnMessageOption(func(m socket.Message) error {

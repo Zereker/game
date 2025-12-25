@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Zereker/game/protocol"
+	pb "github.com/Zereker/werewolf/proto"
 	"github.com/pkg/errors"
 )
 
@@ -58,19 +59,19 @@ func (h *InputHandler) HandleCommand(cmd string) error {
 	case "ready":
 		return h.handleReady()
 	case "kill":
-		return h.handleAction("kill", parts)
+		return h.handleAction(pb.SkillType_SKILL_TYPE_KILL, parts)
 	case "check":
-		return h.handleAction("check", parts)
+		return h.handleAction(pb.SkillType_SKILL_TYPE_CHECK, parts)
 	case "protect":
-		return h.handleAction("protect", parts)
+		return h.handleAction(pb.SkillType_SKILL_TYPE_PROTECT, parts)
 	case "antidote":
-		return h.handleAction("antidote", parts)
+		return h.handleAction(pb.SkillType_SKILL_TYPE_ANTIDOTE, parts)
 	case "poison":
-		return h.handleAction("poison", parts)
+		return h.handleAction(pb.SkillType_SKILL_TYPE_POISON, parts)
 	case "vote":
-		return h.handleAction("vote", parts)
+		return h.handleAction(pb.SkillType_SKILL_TYPE_VOTE, parts)
 	case "speak":
-		return h.handleSpeak(parts)
+		return h.handleAction(pb.SkillType_SKILL_TYPE_SPEAK, parts)
 	case "quit", "exit":
 		return h.handleQuit()
 	default:
@@ -147,15 +148,15 @@ func (h *InputHandler) handleReady() error {
 }
 
 // handleAction 处理游戏动作命令
-func (h *InputHandler) handleAction(actionType string, parts []string) error {
+func (h *InputHandler) handleAction(skillType pb.SkillType, parts []string) error {
 	targetID := ""
 
 	// 某些动作需要目标
-	needsTarget := actionType != "antidote"
+	needsTarget := skillType != pb.SkillType_SKILL_TYPE_ANTIDOTE && skillType != pb.SkillType_SKILL_TYPE_SPEAK
 
 	if needsTarget {
 		if len(parts) < 2 {
-			return errors.Errorf("用法: %s <玩家编号>", actionType)
+			return errors.Errorf("用法: %s <玩家编号>", parts[0])
 		}
 
 		// 解析玩家编号
@@ -173,27 +174,7 @@ func (h *InputHandler) handleAction(actionType string, parts []string) error {
 		targetID = players[playerNum-1].ID
 	}
 
-	msg, err := protocol.NewPerformActionMessage(actionType, targetID, nil)
-	if err != nil {
-		return err
-	}
-
-	return h.client.SendMessage(msg)
-}
-
-// handleSpeak 处理发言命令
-func (h *InputHandler) handleSpeak(parts []string) error {
-	if len(parts) < 2 {
-		return errors.New("用法: speak <内容>")
-	}
-
-	content := strings.Join(parts[1:], " ")
-
-	data := map[string]interface{}{
-		"content": content,
-	}
-
-	msg, err := protocol.NewPerformActionMessage("speak", "", data)
+	msg, err := protocol.NewPerformActionMessage(int32(skillType), targetID)
 	if err != nil {
 		return err
 	}

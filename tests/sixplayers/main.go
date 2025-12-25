@@ -9,6 +9,7 @@ import (
 
 	"github.com/Zereker/game/protocol"
 	"github.com/Zereker/socket"
+	pb "github.com/Zereker/werewolf/proto"
 )
 
 // TestClient represents a test player client
@@ -81,8 +82,8 @@ func (c *TestClient) Ready() error {
 	return c.Conn.Write(msg)
 }
 
-func (c *TestClient) PerformAction(actionType, targetID string) error {
-	msg, _ := protocol.NewPerformActionMessage(actionType, targetID, nil)
+func (c *TestClient) PerformAction(skillType pb.SkillType, targetID string) error {
+	msg, _ := protocol.NewPerformActionMessage(int32(skillType), targetID)
 	return c.Conn.Write(msg)
 }
 
@@ -134,8 +135,8 @@ func (c *TestClient) handleMessage(msg *protocol.Message) {
 	case protocol.MsgGameStarted:
 		var data protocol.GameStartedData
 		msg.UnmarshalData(&data)
-		c.Role = string(data.RoleType)
-		c.Camp = string(data.Camp)
+		c.Role = data.RoleType.String()
+		c.Camp = data.Camp.String()
 		fmt.Printf("[%s] Game started! Role: %s, Camp: %s\n", c.Name, c.Role, c.Camp)
 
 	case protocol.MsgPhaseChanged:
@@ -282,13 +283,13 @@ func main() {
 	for _, c := range clients {
 		fmt.Printf("%s: %s (%s)\n", c.Name, c.Role, c.Camp)
 		switch c.Role {
-		case "werewolf":
+		case "ROLE_TYPE_WEREWOLF":
 			werewolves = append(werewolves, c)
-		case "villager":
+		case "ROLE_TYPE_VILLAGER":
 			villagers = append(villagers, c)
-		case "seer":
+		case "ROLE_TYPE_SEER":
 			seer = c
-		case "witch":
+		case "ROLE_TYPE_WITCH":
 			witch = c
 		}
 	}
@@ -301,7 +302,7 @@ func main() {
 		if len(villagers) > 0 {
 			target := villagers[0]
 			fmt.Printf("Werewolf %s tries to kill %s...\n", werewolves[0].Name, target.Name)
-			werewolves[0].PerformAction("werewolf_kill", target.PlayerID)
+			werewolves[0].PerformAction(pb.SkillType_SKILL_TYPE_KILL, target.PlayerID)
 			time.Sleep(500 * time.Millisecond)
 			werewolves[0].DrainMessages(1 * time.Second)
 		}
@@ -310,7 +311,7 @@ func main() {
 		if len(werewolves) > 0 {
 			target := werewolves[0]
 			fmt.Printf("Seer %s checks %s...\n", seer.Name, target.Name)
-			seer.PerformAction("seer_check", target.PlayerID)
+			seer.PerformAction(pb.SkillType_SKILL_TYPE_CHECK, target.PlayerID)
 			time.Sleep(500 * time.Millisecond)
 			seer.DrainMessages(1 * time.Second)
 		}
@@ -318,7 +319,7 @@ func main() {
 		// Witch uses potion
 		if witch != nil && len(villagers) > 0 {
 			fmt.Printf("Witch %s considers using save potion...\n", witch.Name)
-			witch.PerformAction("witch_save", villagers[0].PlayerID)
+			witch.PerformAction(pb.SkillType_SKILL_TYPE_ANTIDOTE, villagers[0].PlayerID)
 			time.Sleep(500 * time.Millisecond)
 			witch.DrainMessages(1 * time.Second)
 		}

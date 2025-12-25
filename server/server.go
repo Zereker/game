@@ -10,7 +10,7 @@ import (
 
 	"github.com/Zereker/game/protocol"
 	"github.com/Zereker/socket"
-	"github.com/Zereker/werewolf"
+	pb "github.com/Zereker/werewolf/proto"
 )
 
 // Server 游戏服务器
@@ -37,7 +37,7 @@ func NewServer(logger *slog.Logger) *Server {
 }
 
 // CreateRoom 创建房间
-func (s *Server) CreateRoom(name string, roles []werewolf.RoleType) (*Room, error) {
+func (s *Server) CreateRoom(name string, roles []pb.RoleType) (*Room, error) {
 	room := NewRoom(name, roles, s.logger)
 
 	s.mu.Lock()

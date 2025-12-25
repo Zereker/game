@@ -146,11 +146,10 @@ func NewReadyMessage() (*Message, error) {
 }
 
 // NewPerformActionMessage 执行动作消息
-func NewPerformActionMessage(actionType, targetID string, data map[string]interface{}) (*Message, error) {
+func NewPerformActionMessage(skillType int32, targetID string) (*Message, error) {
 	return NewMessage(MsgPerformAction, map[string]interface{}{
-		"actionType": actionType,
-		"targetID":   targetID,
-		"data":       data,
+		"skillType": skillType,
+		"targetID":  targetID,
 	})
 }
 
@@ -159,9 +158,7 @@ func NewErrorMessage(message string) (*Message, error) {
 	return NewMessage(MsgError, ErrorData{Message: message})
 }
 
-// NewAdvancePhaseMessage 创建阶段推进消息
-func NewAdvancePhaseMessage(phase string) (*Message, error) {
-	return NewMessage(MsgAdvancePhase, map[string]interface{}{
-		"phase": phase,
-	})
+// NewEndPhaseMessage 创建结束阶段消息
+func NewEndPhaseMessage() (*Message, error) {
+	return NewMessage(MsgEndPhase, EndPhaseData{})
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Zereker/game/protocol"
 	"github.com/Zereker/socket"
+	pb "github.com/Zereker/werewolf/proto"
 )
 
 // GameClient 测试客户端
@@ -19,8 +20,8 @@ type GameClient struct {
 	RoomID   string
 	Conn     *socket.Conn
 	Messages chan *protocol.Message
-	Role     string
-	Camp     string
+	Role     pb.RoleType
+	Camp     pb.Camp
 	IsAlive  bool
 	mu       sync.Mutex
 }
@@ -85,13 +86,13 @@ func (c *GameClient) Ready() error {
 	return c.Conn.Write(msg)
 }
 
-func (c *GameClient) PerformAction(actionType, targetID string) error {
-	msg, _ := protocol.NewPerformActionMessage(actionType, targetID, nil)
+func (c *GameClient) PerformAction(skillType pb.SkillType, targetID string) error {
+	msg, _ := protocol.NewPerformActionMessage(int32(skillType), targetID)
 	return c.Conn.Write(msg)
 }
 
-func (c *GameClient) AdvancePhase(phase string) error {
-	msg, _ := protocol.NewAdvancePhaseMessage(phase)
+func (c *GameClient) EndPhase() error {
+	msg, _ := protocol.NewEndPhaseMessage()
 	return c.Conn.Write(msg)
 }
 
@@ -145,8 +146,8 @@ func (c *GameClient) processMessage(msg *protocol.Message) {
 	case protocol.MsgGameStarted:
 		var data protocol.GameStartedData
 		msg.UnmarshalData(&data)
-		c.Role = string(data.RoleType)
-		c.Camp = string(data.Camp)
+		c.Role = data.RoleType
+		c.Camp = data.Camp
 
 	case protocol.MsgGameState:
 		var data protocol.GameStateData
@@ -186,29 +187,6 @@ func (c *GameClient) processMessage(msg *protocol.Message) {
 		var data protocol.ErrorData
 		msg.UnmarshalData(&data)
 		fmt.Printf("[%s] 错误: %s\n", c.Name, data.Message)
-	}
-}
-
-// 获取当前游戏阶段
-func (c *GameClient) GetCurrentPhase() string {
-	// 从最新的消息中获取阶段信息
-	for {
-		select {
-		case msg := <-c.Messages:
-			c.processMessage(msg)
-			if msg.Type == protocol.MsgGameState {
-				var data protocol.GameStateData
-				msg.UnmarshalData(&data)
-				return string(data.Phase)
-			}
-			if msg.Type == protocol.MsgPhaseChanged {
-				var data protocol.PhaseChangedData
-				msg.UnmarshalData(&data)
-				return string(data.Phase)
-			}
-		case <-time.After(100 * time.Millisecond):
-			return ""
-		}
 	}
 }
 
@@ -298,13 +276,13 @@ func main() {
 	for _, c := range clients {
 		fmt.Printf("%s: %s\n", c.Name, c.Role)
 		switch c.Role {
-		case "werewolf":
+		case pb.RoleType_ROLE_TYPE_WEREWOLF:
 			werewolves = append(werewolves, c)
-		case "villager":
+		case pb.RoleType_ROLE_TYPE_VILLAGER:
 			villagers = append(villagers, c)
-		case "seer":
+		case pb.RoleType_ROLE_TYPE_SEER:
 			seer = c
-		case "witch":
+		case pb.RoleType_ROLE_TYPE_WITCH:
 			witch = c
 		}
 	}
@@ -322,9 +300,9 @@ func main() {
 	for round := 1; round <= maxRounds && !gameEnded; round++ {
 		fmt.Printf("\n========== 第 %d 轮 ==========\n", round)
 
-		// 推进到夜晚阶段
+		// 推进阶段
 		fmt.Println("\n--- 夜晚阶段 ---")
-		leader.AdvancePhase("night")
+		leader.EndPhase()
 		time.Sleep(500 * time.Millisecond)
 		for _, c := range clients {
 			c.DrainAndProcess(300 * time.Millisecond)
@@ -352,7 +330,7 @@ func main() {
 			for _, w := range werewolves {
 				if w.IsAlive {
 					fmt.Printf("狼人 %s 杀 %s\n", w.Name, target.Name)
-					w.PerformAction("kill", target.PlayerID)
+					w.PerformAction(pb.SkillType_SKILL_TYPE_KILL, target.PlayerID)
 					time.Sleep(300 * time.Millisecond)
 					w.DrainAndProcess(300 * time.Millisecond)
 					break
@@ -365,7 +343,7 @@ func main() {
 			checkTarget := werewolves[0]
 			if checkTarget.IsAlive {
 				fmt.Printf("预言家 %s 查验 %s\n", seer.Name, checkTarget.Name)
-				seer.PerformAction("check", checkTarget.PlayerID)
+				seer.PerformAction(pb.SkillType_SKILL_TYPE_CHECK, checkTarget.PlayerID)
 				time.Sleep(300 * time.Millisecond)
 				seer.DrainAndProcess(300 * time.Millisecond)
 			}
@@ -374,14 +352,14 @@ func main() {
 		// 女巫使用技能 (第一轮尝试救人)
 		if witch != nil && witch.IsAlive && round == 1 && target != nil {
 			fmt.Printf("女巫 %s 使用解药救 %s\n", witch.Name, target.Name)
-			witch.PerformAction("antidote", target.PlayerID)
+			witch.PerformAction(pb.SkillType_SKILL_TYPE_ANTIDOTE, target.PlayerID)
 			time.Sleep(300 * time.Millisecond)
 			witch.DrainAndProcess(300 * time.Millisecond)
 		}
 
 		// 推进到白天阶段
 		fmt.Println("\n--- 白天阶段 ---")
-		leader.AdvancePhase("day")
+		leader.EndPhase()
 		time.Sleep(500 * time.Millisecond)
 		for _, c := range clients {
 			c.DrainAndProcess(500 * time.Millisecond)
@@ -390,7 +368,7 @@ func main() {
 		// 发言
 		for _, c := range clients {
 			if c.IsAlive {
-				c.PerformAction("speak", "")
+				c.PerformAction(pb.SkillType_SKILL_TYPE_SPEAK, "")
 				time.Sleep(100 * time.Millisecond)
 			}
 		}
@@ -398,7 +376,7 @@ func main() {
 
 		// 推进到投票阶段
 		fmt.Println("\n--- 投票阶段 ---")
-		leader.AdvancePhase("vote")
+		leader.EndPhase()
 		time.Sleep(500 * time.Millisecond)
 		for _, c := range clients {
 			c.DrainAndProcess(300 * time.Millisecond)
@@ -419,7 +397,7 @@ func main() {
 			for _, g := range goodGuys {
 				if g != nil && g.IsAlive {
 					fmt.Printf("%s 投票给 %s\n", g.Name, voteTarget.Name)
-					g.PerformAction("vote", voteTarget.PlayerID)
+					g.PerformAction(pb.SkillType_SKILL_TYPE_VOTE, voteTarget.PlayerID)
 					time.Sleep(100 * time.Millisecond)
 				}
 			}
@@ -462,7 +440,7 @@ func main() {
 		goodAliveNow := 0
 		for _, c := range clients {
 			if c.IsAlive {
-				if c.Role == "werewolf" {
+				if c.Role == pb.RoleType_ROLE_TYPE_WEREWOLF {
 					wolvesAliveNow++
 				} else {
 					goodAliveNow++
@@ -499,7 +477,7 @@ func main() {
 	goodAlive := 0
 	for _, c := range clients {
 		if c.IsAlive {
-			if c.Role == "werewolf" {
+			if c.Role == pb.RoleType_ROLE_TYPE_WEREWOLF {
 				wolvesAlive++
 			} else {
 				goodAlive++

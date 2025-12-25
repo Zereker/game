@@ -1,12 +1,13 @@
 package main
 
 import (
-	"fmt"
 	"log/slog"
+	"math/rand"
 	"sync"
 
 	"github.com/Zereker/game/protocol"
 	"github.com/Zereker/werewolf"
+	pb "github.com/Zereker/werewolf/proto"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 )
@@ -27,13 +28,13 @@ type Room struct {
 	Players map[string]*Player // playerID -> Player
 	Engine  *werewolf.Engine
 	State   RoomState
-	Roles   []werewolf.RoleType
+	Roles   []pb.RoleType
 	mu      sync.RWMutex
 	logger  *slog.Logger
 }
 
 // NewRoom 创建新房间
-func NewRoom(name string, roles []werewolf.RoleType, logger *slog.Logger) *Room {
+func NewRoom(name string, roles []pb.RoleType, logger *slog.Logger) *Room {
 	room := &Room{
 		ID:      uuid.New().String()[:8], // 使用短ID方便输入
 		Name:    name,
@@ -118,6 +119,16 @@ func (r *Room) CanStart() bool {
 	return true
 }
 
+// getRoleCamp 获取角色对应的阵营
+func getRoleCamp(role pb.RoleType) pb.Camp {
+	switch role {
+	case pb.RoleType_ROLE_TYPE_WEREWOLF:
+		return pb.Camp_CAMP_EVIL
+	default:
+		return pb.Camp_CAMP_GOOD
+	}
+}
+
 // Start 开始游戏
 func (r *Room) Start() error {
 	r.mu.Lock()
@@ -132,18 +143,23 @@ func (r *Room) Start() error {
 	}
 
 	// 创建游戏引擎
-	config := werewolf.Config{
-		Roles:           r.Roles,
-		EnableLastWords: false,
-	}
-
+	config := werewolf.DefaultGameConfig()
 	r.Engine = werewolf.NewEngine(config)
 
-	// 添加玩家到引擎
+	// 打乱角色顺序
+	shuffledRoles := make([]pb.RoleType, len(r.Roles))
+	copy(shuffledRoles, r.Roles)
+	rand.Shuffle(len(shuffledRoles), func(i, j int) {
+		shuffledRoles[i], shuffledRoles[j] = shuffledRoles[j], shuffledRoles[i]
+	})
+
+	// 添加玩家到引擎（需要指定角色和阵营）
+	i := 0
 	for playerID := range r.Players {
-		if err := r.Engine.AddPlayer(playerID); err != nil {
-			return errors.Wrap(err, "add player to engine")
-		}
+		role := shuffledRoles[i]
+		camp := getRoleCamp(role)
+		r.Engine.AddPlayer(playerID, role, camp)
+		i++
 	}
 
 	// 订阅游戏事件
@@ -166,67 +182,43 @@ func (r *Room) Start() error {
 
 // subscribeEvents 订阅游戏引擎事件
 func (r *Room) subscribeEvents() {
-	// 阶段变化
-	r.Engine.Subscribe(werewolf.EventPhaseStarted, func(e werewolf.Event) {
-		r.handlePhaseStarted(e)
-	})
-
-	// 玩家死亡
-	r.Engine.Subscribe(werewolf.EventPlayerDied, func(e werewolf.Event) {
-		r.handlePlayerDied(e)
-	})
-
-	// 游戏结束
-	r.Engine.Subscribe(werewolf.EventGameEnded, func(e werewolf.Event) {
-		r.handleGameEnded(e)
+	r.Engine.OnEvent(func(event *pb.Event) {
+		r.handleEvent(event)
 	})
 }
 
-// handlePhaseStarted 处理阶段开始事件
-func (r *Room) handlePhaseStarted(e werewolf.Event) {
-	data := e.Data.(map[string]interface{})
-	phase := data["phase"].(werewolf.PhaseType)
+// handleEvent 处理游戏事件
+func (r *Room) handleEvent(event *pb.Event) {
+	switch event.Type {
+	case pb.EventType_EVENT_TYPE_GAME_ENDED:
+		r.handleGameEnded(event)
+	case pb.EventType_EVENT_TYPE_KILL, pb.EventType_EVENT_TYPE_POISON:
+		r.handlePlayerDied(event)
+	}
 
-	state := r.Engine.GetState()
-
-	// 广播阶段变化
-	msg := protocol.MustNewMessage(protocol.MsgPhaseChanged, protocol.PhaseChangedData{
-		Phase: phase,
-		Round: state.Round,
-	})
-
-	r.BroadcastMessage(msg)
-
-	// 发送游戏状态
+	// 发送游戏状态更新
 	r.SendGameState()
 }
 
 // handlePlayerDied 处理玩家死亡事件
-func (r *Room) handlePlayerDied(e werewolf.Event) {
-	data := e.Data.(map[string]interface{})
-	playerID := data["playerID"].(string)
-	reason := data["reason"].(string)
-
+func (r *Room) handlePlayerDied(event *pb.Event) {
 	msg := protocol.MustNewMessage(protocol.MsgGameEvent, protocol.GameEventData{
-		EventType: werewolf.EventPlayerDied,
-		Message:   fmt.Sprintf("玩家 %s 死亡: %s", playerID, reason),
-		Data:      data,
+		EventType: event.Type,
+		Message:   "玩家死亡",
 	})
 
 	r.BroadcastMessage(msg)
 }
 
 // handleGameEnded 处理游戏结束事件
-func (r *Room) handleGameEnded(e werewolf.Event) {
+func (r *Room) handleGameEnded(event *pb.Event) {
 	r.mu.Lock()
 	r.State = RoomStateFinished
 	r.mu.Unlock()
 
-	data := e.Data.(map[string]interface{})
-	winner := data["winner"].(werewolf.Camp)
-
 	state := r.Engine.GetState()
-	players := r.convertPlayersInfo(state.Players, true)
+	_, winner := state.CheckVictory()
+	players := r.convertPlayersInfo(true)
 
 	msg := protocol.MustNewMessage(protocol.MsgGameEnded, protocol.GameEndedData{
 		Winner:  winner,
@@ -244,31 +236,16 @@ func (r *Room) notifyGameStarted() {
 
 	for playerID, player := range r.Players {
 		// 找到该玩家的角色
-		var roleType werewolf.RoleType
-		var camp werewolf.Camp
-
-		for _, ps := range state.Players {
-			if ps.ID == playerID {
-				roleType = ps.Role
-				// 根据角色类型判断阵营
-				switch roleType {
-				case werewolf.RoleTypeWerewolf:
-					camp = werewolf.CampEvil
-				case werewolf.RoleTypeSeer, werewolf.RoleTypeWitch, werewolf.RoleTypeGuard,
-					werewolf.RoleTypeHunter, werewolf.RoleTypeVillager:
-					camp = werewolf.CampGood
-				default:
-					camp = werewolf.CampNone
-				}
-				break
-			}
+		ps, ok := state.GetPlayer(playerID)
+		if !ok {
+			continue
 		}
 
 		// 发送游戏开始消息（包含该玩家的角色信息）
-		players := r.convertPlayersInfo(state.Players, false)
+		players := r.convertPlayersInfo(false)
 		msg := protocol.MustNewMessage(protocol.MsgGameStarted, protocol.GameStartedData{
-			RoleType: roleType,
-			Camp:     camp,
+			RoleType: ps.Role,
+			Camp:     ps.Camp,
 			Players:  players,
 		})
 
@@ -279,14 +256,21 @@ func (r *Room) notifyGameStarted() {
 // SendGameState 发送游戏状态给所有玩家
 func (r *Room) SendGameState() {
 	state := r.Engine.GetState()
-	players := r.convertPlayersInfo(state.Players, false)
+	players := r.convertPlayersInfo(false)
+
+	alivePlayers := make([]string, 0)
+	for id, ps := range state.Players {
+		if ps.Alive {
+			alivePlayers = append(alivePlayers, id)
+		}
+	}
 
 	msg := protocol.MustNewMessage(protocol.MsgGameState, protocol.GameStateData{
 		Phase:        state.Phase,
 		Round:        state.Round,
 		Players:      players,
-		AlivePlayers: state.AlivePlayers,
-		IsEnded:      state.IsEnded,
+		AlivePlayers: alivePlayers,
+		IsEnded:      state.Phase == pb.PhaseType_PHASE_TYPE_END,
 	})
 
 	r.BroadcastMessage(msg)
@@ -303,19 +287,20 @@ func (r *Room) BroadcastMessage(msg *protocol.Message) {
 }
 
 // convertPlayersInfo 转换玩家信息（控制是否包含角色信息）
-func (r *Room) convertPlayersInfo(players []werewolf.PlayerState, includeRole bool) []protocol.PlayerInfo {
-	result := make([]protocol.PlayerInfo, 0, len(players))
+func (r *Room) convertPlayersInfo(includeRole bool) []protocol.PlayerInfo {
+	state := r.Engine.GetState()
+	result := make([]protocol.PlayerInfo, 0, len(r.Players))
 
-	for _, ps := range players {
-		player, exists := r.Players[ps.ID]
-		if !exists {
+	for id, player := range r.Players {
+		ps, ok := state.GetPlayer(id)
+		if !ok {
 			continue
 		}
 
 		info := protocol.PlayerInfo{
-			ID:       ps.ID,
+			ID:       id,
 			Username: player.Username,
-			IsAlive:  ps.IsAlive,
+			IsAlive:  ps.Alive,
 			IsReady:  player.IsReady,
 		}
 
