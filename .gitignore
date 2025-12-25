@@ -6,6 +6,7 @@ bin/
 *.so
 *.dylib
 server_bin
+client_bin
 test_full_game
 test_6players
 
