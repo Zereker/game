@@ -14,17 +14,21 @@ import (
 
 // ClientState 客户端状态
 type ClientState struct {
-	PlayerID     string
-	Username     string
-	RoomID       string
-	MyRole       pb.RoleType
-	MyCamp       pb.Camp
-	GamePhase    pb.PhaseType
-	Round        int
-	Players      []protocol.PlayerInfo
-	AlivePlayers []string
-	Events       []string
-	IsInGame     bool
+	PlayerID      string
+	Username      string
+	RoomID        string
+	MyRole        pb.RoleType
+	MyCamp        pb.Camp
+	GamePhase     pb.PhaseType
+	Round         int
+	Players       []protocol.PlayerInfo
+	AlivePlayers  []string
+	Events        []string
+	IsInGame      bool
+	WolfTeammates []protocol.PlayerInfo // 狼人队友 (仅狼人可见)
+	AllowedSkills []pb.SkillType        // 当前可用技能
+	KillTargetID  string                // 女巫可见的击杀目标ID
+	KillTargetName string               // 女巫可见的击杀目标名称
 }
 
 // Client 客户端
@@ -146,6 +150,10 @@ func (c *Client) handleMessage(msg *protocol.Message) error {
 		return c.handleGameEnded(msg)
 	case protocol.MsgError:
 		return c.handleError(msg)
+	case protocol.MsgRoleInfo:
+		return c.handleRoleInfo(msg)
+	case protocol.MsgAllowedSkills:
+		return c.handleAllowedSkills(msg)
 	default:
 		c.logger.Warn("unknown message type", "type", msg.Type)
 	}
@@ -369,6 +377,64 @@ func (c *Client) handleError(msg *protocol.Message) error {
 	return nil
 }
 
+// handleRoleInfo 处理角色特殊信息
+func (c *Client) handleRoleInfo(msg *protocol.Message) error {
+	var data protocol.RoleInfoData
+	if err := msg.UnmarshalData(&data); err != nil {
+		return err
+	}
+
+	switch data.InfoType {
+	case "wolf_teammates":
+		c.state.WolfTeammates = data.Teammates
+		if len(data.Teammates) > 0 {
+			names := ""
+			for i, t := range data.Teammates {
+				if i > 0 {
+					names += ", "
+				}
+				names += t.Username
+			}
+			c.addEvent("狼人队友: " + names)
+		}
+	case "witch_kill_target":
+		c.state.KillTargetID = data.KillTargetID
+		c.state.KillTargetName = data.KillTargetName
+		if data.KillTargetName != "" {
+			c.addEvent("今晚被杀: " + data.KillTargetName + " (可使用解药救人)")
+		} else {
+			c.addEvent("今晚无人被杀")
+		}
+	}
+
+	c.Render()
+	return nil
+}
+
+// handleAllowedSkills 处理可用技能列表
+func (c *Client) handleAllowedSkills(msg *protocol.Message) error {
+	var data protocol.AllowedSkillsData
+	if err := msg.UnmarshalData(&data); err != nil {
+		return err
+	}
+
+	c.state.AllowedSkills = data.Skills
+
+	if len(data.Skills) > 0 {
+		skillNames := ""
+		for i, skill := range data.Skills {
+			if i > 0 {
+				skillNames += ", "
+			}
+			skillNames += c.ui.skillName(skill)
+		}
+		c.addEvent("可用技能: " + skillNames)
+	}
+
+	c.Render()
+	return nil
+}
+
 // maxEvents 事件日志最大条数，防止内存无限增长
 const maxEvents = 100
 
@@ -427,6 +493,6 @@ func (c *Client) Run() {
 func (c *Client) Close() {
 	c.cancel()
 	if c.conn != nil {
-		// socket 包没有提供 Close 方法，通过 cancel context 来关闭
+		c.conn.Close() // socket v1.1.0 提供了 Close 方法
 	}
 }

@@ -301,6 +301,24 @@ func (h *MessageHandler) handlePerformAction(playerID string, msg *protocol.Mess
 		targetID = tid
 	}
 
+	// 验证技能是否在当前阶段允许使用
+	allowedSkills := room.Engine.GetAllowedSkills(playerID)
+	skillAllowed := false
+	for _, allowed := range allowedSkills {
+		if allowed == skillType {
+			skillAllowed = true
+			break
+		}
+	}
+	if !skillAllowed {
+		resultMsg := protocol.MustNewMessage(protocol.MsgActionResult, protocol.ActionResultData{
+			Success: false,
+			Message: "当前阶段不允许使用该技能",
+		})
+		player.SendMessageDirect(resultMsg)
+		return errors.New("skill not allowed in current phase")
+	}
+
 	// 创建技能使用
 	skillUse := &werewolf.SkillUse{
 		PlayerID: playerID,
@@ -364,16 +382,35 @@ func (h *MessageHandler) handleEndPhase(playerID string, msg *protocol.Message) 
 		return errors.Wrap(err, "end phase")
 	}
 
+	newPhase := room.Engine.GetCurrentPhase()
 	h.logger.Info("phase ended",
 		"effects", len(effects),
-		"newPhase", room.Engine.GetCurrentPhase())
+		"newPhase", newPhase)
 
 	// 广播阶段变化
 	phaseMsg := protocol.MustNewMessage(protocol.MsgPhaseChanged, protocol.PhaseChangedData{
-		Phase: room.Engine.GetCurrentPhase(),
+		Phase: newPhase,
 		Round: room.Engine.GetCurrentRound(),
 	})
 	room.BroadcastMessage(phaseMsg)
+
+	// 如果进入女巫阶段，向女巫发送击杀目标信息
+	if newPhase == pb.PhaseType_PHASE_TYPE_NIGHT_WITCH {
+		state := room.Engine.GetState()
+		for pid, ps := range state.Players {
+			if ps.Role == pb.RoleType_ROLE_TYPE_WITCH && ps.Alive {
+				room.SendWitchKillTarget(pid)
+			}
+		}
+	}
+
+	// 向所有活着的玩家发送可用技能列表
+	state := room.Engine.GetState()
+	for pid, ps := range state.Players {
+		if ps.Alive {
+			room.SendAllowedSkills(pid)
+		}
+	}
 
 	// 广播游戏状态
 	room.SendGameState()

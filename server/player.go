@@ -27,9 +27,17 @@ func NewPlayer(username string, conn *socket.Conn) *Player {
 	}
 }
 
+// IsConnected 检查玩家连接是否仍然有效
+func (p *Player) IsConnected() bool {
+	if p.Conn == nil {
+		return false
+	}
+	return !p.Conn.IsClosed()
+}
+
 // SendMessage 发送消息给玩家 (通过channel异步发送)
 func (p *Player) SendMessage(msg socket.Message) error {
-	if p.Conn == nil {
+	if p.Conn == nil || p.Conn.IsClosed() {
 		return nil
 	}
 	return p.Conn.Write(msg)
@@ -37,10 +45,18 @@ func (p *Player) SendMessage(msg socket.Message) error {
 
 // SendMessageDirect 直接同步发送消息 (阻塞直到发送完成)
 func (p *Player) SendMessageDirect(msg socket.Message) error {
-	if p.Conn == nil {
+	if p.Conn == nil || p.Conn.IsClosed() {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return p.Conn.WriteBlocking(ctx, msg)
+}
+
+// Close 关闭玩家连接
+func (p *Player) Close() error {
+	if p.Conn == nil {
+		return nil
+	}
+	return p.Conn.Close()
 }

@@ -300,3 +300,26 @@ func (ui *UI) getActionHints(phase pb.PhaseType, roleType pb.RoleType) string {
 		return "输入 help 查看可用命令"
 	}
 }
+
+func (ui *UI) skillName(skill pb.SkillType) string {
+	switch skill {
+	case pb.SkillType_SKILL_TYPE_KILL:
+		return "击杀"
+	case pb.SkillType_SKILL_TYPE_CHECK:
+		return "查验"
+	case pb.SkillType_SKILL_TYPE_ANTIDOTE:
+		return "解药"
+	case pb.SkillType_SKILL_TYPE_POISON:
+		return "毒药"
+	case pb.SkillType_SKILL_TYPE_PROTECT:
+		return "守护"
+	case pb.SkillType_SKILL_TYPE_VOTE:
+		return "投票"
+	case pb.SkillType_SKILL_TYPE_SPEAK:
+		return "发言"
+	case pb.SkillType_SKILL_TYPE_SHOOT:
+		return "开枪"
+	default:
+		return skill.String()
+	}
+}

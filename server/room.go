@@ -250,7 +250,93 @@ func (r *Room) notifyGameStarted() {
 		})
 
 		player.SendMessageDirect(msg)
+
+		// 如果是狼人，发送队友信息
+		if ps.Role == pb.RoleType_ROLE_TYPE_WEREWOLF {
+			r.sendWolfTeammates(playerID, player)
+		}
 	}
+}
+
+// sendWolfTeammates 向狼人发送队友信息
+func (r *Room) sendWolfTeammates(playerID string, player *Player) {
+	teammates := r.Engine.GetWolfTeammates(playerID)
+	if len(teammates) == 0 {
+		return
+	}
+
+	teammatesInfo := make([]protocol.PlayerInfo, 0, len(teammates))
+	for _, teammateID := range teammates {
+		if p, exists := r.Players[teammateID]; exists {
+			teammatesInfo = append(teammatesInfo, protocol.PlayerInfo{
+				ID:       teammateID,
+				Username: p.Username,
+				IsAlive:  true,
+				RoleType: pb.RoleType_ROLE_TYPE_WEREWOLF,
+			})
+		}
+	}
+
+	msg := protocol.MustNewMessage(protocol.MsgRoleInfo, protocol.RoleInfoData{
+		InfoType:  "wolf_teammates",
+		Teammates: teammatesInfo,
+	})
+	player.SendMessageDirect(msg)
+
+	r.logger.Info("sent wolf teammates info",
+		"playerID", playerID,
+		"teammates", len(teammatesInfo))
+}
+
+// SendWitchKillTarget 向女巫发送击杀目标信息
+func (r *Room) SendWitchKillTarget(witchID string) {
+	player, exists := r.Players[witchID]
+	if !exists {
+		return
+	}
+
+	targetID := r.Engine.GetNightKillTarget()
+	if targetID == "" {
+		return
+	}
+
+	targetName := ""
+	if target, exists := r.Players[targetID]; exists {
+		targetName = target.Username
+	}
+
+	msg := protocol.MustNewMessage(protocol.MsgRoleInfo, protocol.RoleInfoData{
+		InfoType:       "witch_kill_target",
+		KillTargetID:   targetID,
+		KillTargetName: targetName,
+	})
+	player.SendMessageDirect(msg)
+
+	r.logger.Info("sent witch kill target info",
+		"witchID", witchID,
+		"targetID", targetID)
+}
+
+// SendAllowedSkills 向玩家发送当前可用技能列表
+func (r *Room) SendAllowedSkills(playerID string) {
+	player, exists := r.Players[playerID]
+	if !exists {
+		return
+	}
+
+	skills := r.Engine.GetAllowedSkills(playerID)
+	if len(skills) == 0 {
+		return
+	}
+
+	msg := protocol.MustNewMessage(protocol.MsgAllowedSkills, protocol.AllowedSkillsData{
+		Skills: skills,
+	})
+	player.SendMessageDirect(msg)
+
+	r.logger.Info("sent allowed skills",
+		"playerID", playerID,
+		"skills", skills)
 }
 
 // SendGameState 发送游戏状态给所有玩家

@@ -28,6 +28,8 @@ const (
 	MsgActionResult  MessageType = "ACTION_RESULT"
 	MsgGameEnded     MessageType = "GAME_ENDED"
 	MsgError         MessageType = "ERROR"
+	MsgRoleInfo      MessageType = "ROLE_INFO"      // 角色特殊信息 (狼人队友/女巫击杀目标等)
+	MsgAllowedSkills MessageType = "ALLOWED_SKILLS" // 当前可用技能列表
 )
 
 // LoginData 登录消息数据
@@ -141,4 +143,19 @@ type PlayerInfo struct {
 	IsAlive  bool        `json:"isAlive"`
 	IsReady  bool        `json:"isReady"`
 	RoleType pb.RoleType `json:"roleType,omitempty"` // 只在特定情况下发送
+}
+
+// RoleInfoData 角色特殊信息数据
+type RoleInfoData struct {
+	InfoType string `json:"infoType"` // "wolf_teammates" 或 "witch_kill_target"
+	// 狼人队友信息
+	Teammates []PlayerInfo `json:"teammates,omitempty"`
+	// 女巫击杀目标信息
+	KillTargetID   string `json:"killTargetID,omitempty"`
+	KillTargetName string `json:"killTargetName,omitempty"`
+}
+
+// AllowedSkillsData 可用技能列表数据
+type AllowedSkillsData struct {
+	Skills []pb.SkillType `json:"skills"`
 }
